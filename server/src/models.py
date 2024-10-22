@@ -1,7 +1,9 @@
 from datetime import datetime
+import os
 import weave
 from groq import Groq
-from typing import List
+import fireworks.client as fw
+from typing import List, Dict
 from src.types import GroqMessage
 
 
@@ -45,6 +47,39 @@ class GroqScheduler(weave.Model):
 
         # return completion.choices[0].message.content
 
+class FireworksScheduler(weave.Model):
+    model: str
+    system_message: str
+
+    @weave.op()
+    def predict(self, user_sched: str, now_ts: str):
+
+        fw.api_key = os.environ.get("FIREWORKS_API_KEY")
+
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_message,
+            },
+            {"role": "user", "content": f"My preferred schedule is {user_sched}"},
+            {"role": "system", "content": f"Current time is {now_ts}"},
+            {
+                "role": "system",
+                "content": (
+                    "Return a single word `True` or `False`. Say 'True' if the current time is"
+                    " within the user's schedule. Say 'False' if it's outside the schedule."
+                ),
+            },
+        ]
+
+        completion = fw.ChatCompletion.create(
+            "accounts/fireworks/models/llama-v3-8b-instruct",
+            messages=messages,
+            temperature=1,
+        )
+
+        return completion.choices[0].message.content
+
 
 class GroqOnTaskAnalyzer(weave.Model):
     model: str
@@ -61,22 +96,70 @@ class GroqOnTaskAnalyzer(weave.Model):
                 "role": "system",
                 "content": self.system_message,
             },
-            # {"role": "user", "content": f"The user's current goals are: {user_goals}"},
+            {"role": "user", "content": f"The user's current goals are: {user_goals}"},
             {
-                "role": "system",
+                "role": "assistant",
                 "content": f"The following messages are your most recent conversation with the user.",
             },
         ]
         messages.extend(recent_messages)
         messages.append(
             {
-                "role": "system",
+                "role": "assistant",
                 "content": f"The user's screen last showed the following OCR'd text: {recent_ocr}",
             },
         )
         messages.append(
             {
+                "role": "user",
+                "content": (
+                    "Return a single word `True` or `False`. Return 'True' if the text on the screen seems to line up with the user's stated goals. If it doesn't line up with the user's stated goals, return 'False' with nothing else.Also return 'False' if there doesn't seem to be any OCR'd text.\n\nE.g. 'True' or 'False'. Don't explain anything."
+                ),
+            },
+        )
+
+        completion = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=1,
+            max_tokens=1024,
+        )
+
+        result = completion
+
+        return result.choices[0].message.content
+
+class FireworksOnTaskAnalyzer(weave.Model):
+    model: str
+    system_message: str
+
+    @weave.op()
+    def predict(
+        self, user_goals: str, recent_ocr: str, recent_messages: List[Dict[str, str]] = []
+    ):
+        fw.api_key = os.environ.get("FIREWORKS_API_KEY")
+
+        messages = [
+            {
                 "role": "system",
+                "content": self.system_message,
+            },
+            {"role": "user", "content": f"The user's current goals are: {user_goals}"},
+            {
+                "role": "assistant",
+                "content": f"The following messages are your most recent conversation with the user.",
+            },
+        ]
+        messages.extend(recent_messages)
+        messages.append(
+            {
+                "role": "assistant",
+                "content": f"The user's screen last showed the following OCR'd text: {recent_ocr}",
+            },
+        )
+        messages.append(
+            {
+                "role": "user",
                 "content": (
                     "Return a single word `True` or `False`. Return 'True' if the text on the screen seems to line up"
                     " with the user's stated goals. If it doesn't line up with the user's stated goals, return 'False' with nothing else."
@@ -138,6 +221,51 @@ class GroqTaskReminderFirstMsg(weave.Model):
         result = completion
 
         return result.choices[0].message.content
+    
+class FireworksTaskReminderFirstMsg(weave.Model):
+    model: str
+    system_message: str
+
+    @weave.op()
+    def predict(
+        self, user_goals: str, recent_ocr: str, recent_messages: List[Dict[str, str]] = []
+    ):
+        from fireworks.client.chat_completion import ChatCompletion
+
+        fw.api_key = os.environ.get("FIREWORKS_API_KEY")
+
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_message,
+            },
+            {"role": "user", "content": f"The user's current goals are: {user_goals}"},
+            {
+                "role": "system",
+                "content": f"The user's screen last showed the following OCR'd text: {recent_ocr}",
+            },
+        ]
+        messages.extend(recent_messages)
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Greet the user and ask them about their current activity, especially how it relates to their stated goals. Keep it within two sentences."
+                ),
+            },
+        )
+
+        completion = ChatCompletion.create(
+            model=self.model,
+            messages=messages,
+            temperature=1,
+            max_tokens=1024,
+        )
+
+        result = completion
+
+        return result.choices[0].message.content
+
 
 
 
