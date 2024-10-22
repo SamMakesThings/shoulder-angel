@@ -1,6 +1,7 @@
 import requests
 import time
 import json
+import datetime
 
 # function to query the local screen-pipe operation.
 
@@ -13,8 +14,10 @@ def get_screenpipe_activity():
     print("getting screenpipe data")
     while True:
         try:
+            # Get current time minus one minute
+            start_time = (datetime.datetime.utcnow() - datetime.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
             response = requests.get(
-                f"{sp_url}/search?limit=1&offset=0&content_type=ocr", timeout=(15, 30)
+                f"{sp_url}/search?offset=0&content_type=ocr&start_time={start_time}", timeout=(15, 30)
             )
             response.raise_for_status()
             print("screenpipe data fetched")
@@ -37,7 +40,7 @@ def get_screenpipe_activity():
 def main():
     """Run query on an interval"""
 
-    interval = 180  # seconds
+    interval = 90  # seconds
 
     while True:
         res = get_screenpipe_activity()
