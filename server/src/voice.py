@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter
 import weave
 from src.types import VapiEvent, VapiCallEndReport
-from src.state import convo_history, save_convo, get_convo_history_as_vapi
+from src.state import convo_history, save_convo
 from src.memory import write_goals_to_file, update_goals_str, get_goals_str
 
 default_first_msg = "Hello Sam. This is your Shoulder Angel."
@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @weave.op()
-def call_user(first_msg=default_first_msg, user_goal_m: str = "", recent_ocr: str = ""):
+def call_user(first_msg=default_first_msg, user_goal_m: str = "", recent_ocr: str = "", conversation_history: List[dict] = []):
     """Trigger a call thru Vapi to a user, with context"""
     # Your Vapi API Authorization token
     auth_token = os.environ["VAPI_AUTH_TOKEN"]
@@ -44,7 +44,11 @@ def call_user(first_msg=default_first_msg, user_goal_m: str = "", recent_ocr: st
                         "role": "system",
                         "content": f"Here is the most recent OCR of the user's screen: {recent_ocr}",
                     },
-                    *get_convo_history_as_vapi()[-45:],
+                    *conversation_history[-45:],
+                    {
+                        "role": "system",
+                        "content": f"The user's current goals are: {user_goal_m}",
+                    },
                 ],
                 "toolIds": [
                     "84d7620b-83ef-4e75-a42f-9f22c3a407a7",  # add_new_memory
