@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel
 import weave
+from src.state import get_convo_history_as_vapi
 
 
 load_dotenv()
@@ -18,17 +19,17 @@ from src.state import load_convo, get_convo_history_as_groq
 weave.init("shoulder-angel")
 
 scheduler = GroqScheduler(
-    model="llama3-70b-8192",
+    model="llama-3.1-70b-versatile",
     system_message="Your role is to check whether the user is working when they should be. Compare their stated schedule with the current time.",
 )
 
 on_task_analyzer = GroqOnTaskAnalyzer(
-    model="llama3-70b-8192",
+    model="llama-3.1-70b-versatile",
     system_message="Your role is to analyze the user's OCR output and determine if it's relevant to their stated goals (infer this from recent conversation). Return the single word 'True' if it is otherwise return 'False', with nothing else. Use recent messages to understand a user's goals, but only use the OCR for current activity.",
 )
 
 activity_checkin_msg_generator = GroqTaskReminderFirstMsg(
-    model="llama3-70b-8192",
+    model="llama-3.1-70b-versatile",
     system_message="You're having a voice conversation with Sam. Their recent activity seems unaligned with their goals. You should ask about their current activities, and how it relates to their goals. Keep it within two sentences. Reply directly to Sam.",
 )
 
@@ -113,7 +114,7 @@ def handle_activity(activity: ActivityData):
 
     ocr_str = ""
     if activity.data:
-        ocr_str = activity.data[0]["content"]["text"]
+        ocr_str = " ".join([item["content"]["text"] for item in activity.data if "content" in item and "text" in item["content"]])
     elif activity.phone_data:
         ocr_str = activity.phone_data
 
@@ -125,10 +126,9 @@ def handle_activity(activity: ActivityData):
     groq_convo_history = get_convo_history_as_groq()
 
     is_on_task = (
-        on_task_analyzer.predict(
+        "True" in on_task_analyzer.predict(
             user_goal_m, ocr_str, recent_messages=groq_convo_history[-20:]
         )
-        == "True"
     )
 
     print(f"User is on task: {is_on_task}")
@@ -139,7 +139,8 @@ def handle_activity(activity: ActivityData):
         first_msg = activity_checkin_msg_generator.predict(
             user_goal_m, ocr_str, recent_messages=groq_convo_history[-25:]
         )
+        conversation_history = get_convo_history_as_vapi()[-45:]
 
-        call_user(first_msg=first_msg, recent_ocr=ocr_str)
+        call_user(user_goal_m=user_goal_m, first_msg=first_msg, recent_ocr=ocr_str, conversation_history=conversation_history)
 
     return None
