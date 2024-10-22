@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
+from pydantic import BaseModel
 import weave
 
 
@@ -11,7 +12,7 @@ load_dotenv()
 # local
 from src.models import GroqScheduler, GroqOnTaskAnalyzer, GroqTaskReminderFirstMsg
 from src.voice import call_user, router as voice_router
-from src.memory import router as mem_router, get_user_goals
+from src.memory import router as mem_router, get_goals_str
 from src.state import load_convo, get_convo_history_as_groq
 
 weave.init("shoulder-angel")
@@ -70,7 +71,7 @@ def check_schedule():
     )
     # if inactive and also outside of schedule, trigger call
     if currently_within_schedule and not working_recently:
-        user_goal_m = get_user_goals(user_goal_m)
+        user_goal_m = get_goals_str()
         call_user(
             first_msg=f"Hey Sam, checking in. It's been {minutes_since_last_seen} minutes since you were last active, but you'd intended to be productive right now. Are you still working?"
         )
@@ -92,17 +93,9 @@ app.include_router(mem_router)
 app.include_router(voice_router)
 
 
-# @app.get("/")
-# async def test():
-#     return "Ok"
-
-
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
-
-
-from pydantic import BaseModel
 
 
 class ActivityData(BaseModel):
@@ -127,7 +120,7 @@ def handle_activity(activity: ActivityData):
     if not ocr_str:
         return None
 
-    user_goal_m = get_user_goals()
+    user_goal_m = get_goals_str()
 
     groq_convo_history = get_convo_history_as_groq()
 

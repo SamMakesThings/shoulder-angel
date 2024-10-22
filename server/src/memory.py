@@ -1,7 +1,9 @@
-from mem0 import Memory
+import os
 from fastapi import APIRouter, HTTPException
 import sqlite3
+import weave
 
+from src.models import GoalUpdater
 from src.types import (
     VapiEvent,
     AddMemoryFunctionArgs,
@@ -19,26 +21,39 @@ config = {
     },
 }
 
-m = Memory.from_config(config)
+# m = Memory.from_config(config)
 
 
-def get_user_goals() -> str:
-    # query Mem0 for goals
-    relevant_m = m.search(
-        "goals, tasks, and intentions for the day", user_id="samstowers", limit=50
-    )
+import os
 
-    print(f"relevant_m: {relevant_m}")
-    print(f"type of relevant_m: {type(relevant_m)}")
+@weave.op()
+def get_goals_str() -> str:
+    try:
+        with open(os.path.join("..", "data", "goals.txt"), "r") as f:
+            goals = f.read().strip()
+        return goals
+    except FileNotFoundError:
+        return "No goals found."
+    except IOError:
+        return "Error reading goals file."
 
-    goal_m = [x for x in relevant_m if x["metadata"]["category"] == "goals"]
+@weave.op()
+def update_goals_str(goals: str, conversation: str) -> str:
+    goal_updater = GoalUpdater(model="llama3-70b-8192")
+    updated_goals = goal_updater.update_goals(goals, [{"role": "user", "content": conversation}])
+    
+    write_goals_to_file(updated_goals)
+    
+    return updated_goals
 
-    print(f"goals: {goal_m}")
-
-    return str(relevant_m)
+@weave.op()
+def write_goals_to_file(goals: str):
+    with open(os.path.join("..", "data", "goals.txt"), "w") as f:
+        f.write(goals)
 
 
 @router.post("/add_memory")
+@weave.op()
 async def add_memory(data: VapiEvent):
     """Add a memory to the user's memory store"""
 
@@ -56,16 +71,17 @@ async def add_memory(data: VapiEvent):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid arguments structure")
 
-    m.add(
-        function_args.content,
-        user_id="samstowers",
-        metadata={"category": function_args.category},
-    )
+    # m.add(
+    #     function_args.content,
+    #     user_id="samstowers",
+    #     metadata={"category": function_args.category},
+    # )
 
     return {"status": "success", "message": "Memory added successfully"}
 
 
 @router.post("/fetch_memories")
+@weave.op()
 async def fetch_memories(data: VapiEvent):
     """Fetch recent memories from the user's memory store"""
 
@@ -83,16 +99,18 @@ async def fetch_memories(data: VapiEvent):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid arguments structure")
 
-    recent_memories = m.search(
-        function_args.content,
-        user_id="samstowers",
-        # limit=function_args.limit if hasattr(function_args, "limit") else 5,
-        limit=5,
-        # metadata=(
-        #     {"category": function_args.category}
-        #     if hasattr(function_args, "category")
-        #     else None
-        # ),
-    )
+    # recent_memories = m.search(
+    #     function_args.content,
+    #     user_id="samstowers",
+    #     # limit=function_args.limit if hasattr(function_args, "limit") else 5,
+    #     limit=5,
+    #     # metadata=(
+    #     #     {"category": function_args.category}
+    #     #     if hasattr(function_args, "category")
+    #     #     else None
+    #     # ),
+    # )
 
-    return {"result": "Relevant memories: " + str(recent_memories)}
+    return {"result": "Not implemented"}
+
+    # return {"result": "Relevant memories: " + str(recent_memories)}
