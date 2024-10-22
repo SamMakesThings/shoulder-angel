@@ -5,6 +5,7 @@ from fastapi import APIRouter
 import weave
 from src.types import VapiEvent, VapiCallEndReport
 from src.state import convo_history, save_convo, get_convo_history_as_vapi
+from src.memory import write_goals_to_file, update_goals_str, get_goals_str
 
 default_first_msg = "Hello Sam. This is your Shoulder Angel."
 
@@ -70,23 +71,60 @@ def call_user(first_msg=default_first_msg, user_goal_m: str = "", recent_ocr: st
     return res
 
 
-@weave.op()
 @router.post("/handle_vapi")
-def handle_vapi(event: VapiEvent):
+@weave.op()
+def handle_vapi(event: dict):
     """Handle events from Vapi"""
-    if isinstance(event, VapiEvent) and event.message["type"] == "end-of-call-report":
+
+    print(f"is vapi event: {isinstance(event, VapiEvent)}")
+
+    # Print the incoming event
+    print("Received Vapi event:")
+    # print(event)
+    print(event["message"])
+    print(event["message"]["type"])
+
+    # print(event["message"])
+    # print(event["message"]["type"])
+
+    if (event["message"]["type"] == "end-of-call-report"):
+        print("Received end-of-call report")
+        # try:
+            # report = VapiCallEndReport(**event["message"])
+            # print(f"Successfully parsed report: {report}")
+        # except Exception as e:
+        #     print(f"Error parsing VapiCallEndReport: {e}")
+        #     return {"result": "error"}
 
         # Append resulting messages to the convo history
-        print("it's a call end report!")
-        try:
-            report = VapiCallEndReport(**event.message)
-        except Exception as e:
-            print(f"Error parsing VapiCallEndReport: {e}")
-            # return {"result": "error"}
-        convo_history.extend(event.message["messages"])
-        # Save convo history to pickled file
+        convo_history.extend(event["message"]["messages"])
         save_convo()
 
+        # Update user goals
+        transcript = event["message"]["transcript"]
+        updated_goals = update_goals_str(get_goals_str(), transcript)
+        write_goals_to_file(updated_goals)
+
         return {"result": "success"}
+
+    # if isinstance(event, VapiEvent) and event.message and event.message.type == "end-of-call-report":
+    #     print("It's a call end report!")
+    #     try:
+    #         report = VapiCallEndReport(**event.message.dict())
+    #     except Exception as e:
+    #         print(f"Error parsing VapiCallEndReport: {e}")
+    #         return {"result": "error"}
+
+    #     # Append resulting messages to the convo history
+    #     convo_history.extend(report.messages)
+    #     save_convo()
+
+    #     # Update user goals
+
+    #     transcript = report.transcript
+    #     updated_goals = update_goals_str(get_goals_str(), transcript)
+    #     write_goals_to_file(updated_goals)
+
+    #     return {"result": "success"}
     else:
         return {"result": "Not a call end report"}

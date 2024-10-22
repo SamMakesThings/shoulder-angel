@@ -39,6 +39,7 @@ class VapiToolCall(BaseModel):
 class ToolCallResult(BaseModel):
     role: Literal["tool_call_result"]
     time: int
+    type: Literal["tool_call_result"]
     secondsFromStart: float
     name: str
     result: str
@@ -68,4 +69,4 @@ class VapiCallEndReport(BaseModel):
 
 
 class VapiEvent(BaseModel):
-    message: VapiCallEndReport | VapiToolCall | dict
+    message: VapiCallEndReport | VapiToolCall
