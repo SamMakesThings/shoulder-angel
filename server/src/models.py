@@ -34,9 +34,6 @@ class GroqScheduler(weave.Model):
             messages=messages,
             temperature=1,
             max_tokens=1024,
-            top_p=1,
-            stream=False,
-            stop=None,
         )
 
         result = completion
@@ -53,6 +50,7 @@ class GroqOnTaskAnalyzer(weave.Model):
     model: str
     system_message: str
 
+    @weave.op()
     def predict(
         self, user_goals: str, recent_ocr: str, recent_messages: List[GroqMessage] = []
     ):
@@ -92,9 +90,6 @@ class GroqOnTaskAnalyzer(weave.Model):
             messages=messages,
             temperature=1,
             max_tokens=1024,
-            top_p=1,
-            stream=False,
-            stop=None,
         )
 
         result = completion
@@ -106,6 +101,7 @@ class GroqTaskReminderFirstMsg(weave.Model):
     model: str
     system_message: str
 
+    @weave.op()
     def predict(
         self, user_goals: str, recent_ocr: str, recent_messages: List[GroqMessage] = []
     ):
@@ -137,11 +133,41 @@ class GroqTaskReminderFirstMsg(weave.Model):
             messages=messages,
             temperature=1,
             max_tokens=1024,
-            top_p=1,
-            stream=False,
-            stop=None,
         )
 
         result = completion
 
         return result.choices[0].message.content
+
+
+
+class GoalUpdater(weave.Model):
+    model: str
+    system_message: str = "You are an assistant that updates user goals based on new information from conversations."
+
+    @weave.op()
+    def update_goals(self, current_goals: str, conversation_history: List[GroqMessage]):
+        client = Groq()
+
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_message,
+            },
+            {
+                "role": "user",
+                "content": f"Current goals: {current_goals}\n\nPlease update the goals based on any new information in the following conversation. Return only the updated goals as a concise string."
+            }
+        ]
+        messages.extend(conversation_history)
+
+        completion = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1024,
+        )
+
+        updated_goals = completion.choices[0].message.content.strip()
+        return updated_goals
+
