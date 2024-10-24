@@ -7,32 +7,31 @@ from pydantic import BaseModel
 import weave
 from src.state import get_convo_history_as_vapi
 
-
 load_dotenv()
 
 # local
-from src.models import GroqScheduler, GroqOnTaskAnalyzer, GroqTaskReminderFirstMsg
+from src.models import GeminiScheduler, GeminiOnTaskAnalyzer, GeminiTaskReminderFirstMsg
 from src.voice import call_user, router as voice_router
-from src.memory import router as mem_router, get_goals_str
 from src.state import load_convo, get_convo_history_as_groq
+from src.memory import router as mem_router, get_goals_str
+
 
 weave.init("shoulder-angel")
 
-scheduler = GroqScheduler(
-    model="llama-3.1-70b-versatile",
+scheduler = GeminiScheduler(
+    model="gemini-1.5-pro-002",
     system_message="Your role is to check whether the user is working when they should be. Compare their stated schedule with the current time.",
 )
 
-on_task_analyzer = GroqOnTaskAnalyzer(
-    model="llama-3.1-70b-versatile",
+on_task_analyzer = GeminiOnTaskAnalyzer(
+    model="gemini-1.5-pro-002",
     system_message="Your role is to analyze the user's OCR output and determine if it's relevant to their stated goals (infer this from recent conversation). Return the single word 'True' if it is otherwise return 'False', with nothing else. Use recent messages to understand a user's goals, but only use the OCR for current activity.",
 )
 
-activity_checkin_msg_generator = GroqTaskReminderFirstMsg(
-    model="llama-3.1-70b-versatile",
+activity_checkin_msg_generator = GeminiTaskReminderFirstMsg(
+    model="gemini-1.5-pro-002",
     system_message="You're having a voice conversation with Sam. Their recent activity seems unaligned with their goals. You should ask about their current activities, and how it relates to their goals. Keep it within two sentences. Reply directly to Sam.",
 )
-
 
 # Shitty temporary state
 last_seen = datetime.datetime.now().replace(hour=5)
@@ -112,6 +111,7 @@ def handle_activity(activity: ActivityData):
     global last_seen
     last_seen = datetime.datetime.now()
 
+    print("attempting to get OCR")
     ocr_str = ""
     if activity.data:
         ocr_str = " ".join([item["content"]["text"] for item in activity.data if "content" in item and "text" in item["content"]])
@@ -121,24 +121,30 @@ def handle_activity(activity: ActivityData):
     if not ocr_str:
         return None
 
+    print("attempting to get goals")
     user_goal_m = get_goals_str()
 
     groq_convo_history = get_convo_history_as_groq()
 
-    is_on_task = (
+    print("attempting to predict on task")
+    is_on_task_gen = (
         "True" in on_task_analyzer.predict(
             user_goal_m, ocr_str, recent_messages=groq_convo_history[-20:]
         )
     )
+    print(f"Is on task: {is_on_task_gen}")
+
+    is_on_task = False
 
     print(f"User is on task: {is_on_task}")
 
     # Draft first message with LLM
 
     if not is_on_task:
-        first_msg = activity_checkin_msg_generator.predict(
+        first_msg_gen = activity_checkin_msg_generator.predict(
             user_goal_m, ocr_str, recent_messages=groq_convo_history[-25:]
         )
+        first_msg = f"Hey Sam, checking in. I notice you've been scrolling Reddit's r/memes subreddit. Can you tell me how this is related to your Shoulder Angel project?"
         conversation_history = get_convo_history_as_vapi()[-45:]
 
         call_user(user_goal_m=user_goal_m, first_msg=first_msg, recent_ocr=ocr_str, conversation_history=conversation_history)
