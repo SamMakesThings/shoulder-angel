@@ -21,8 +21,6 @@ config = {
     },
 }
 
-# m = Memory.from_config(config)
-
 
 import os
 
