@@ -2,6 +2,9 @@ import requests
 import time
 import json
 import datetime
+from backup_screen_ocr_data import backup_screen_ocr_data
+from PIL import ImageGrab
+from ocrmac import ocrmac
 
 # function to query the local screen-pipe operation.
 
@@ -9,41 +12,27 @@ sp_url = "http://localhost:3030"
 backend_url = "http://localhost:8000"
 
 
-def get_screenpipe_activity():
-    """Get latest OCR info from screenpipe"""
-    print("getting screenpipe data")
-    while True:
-        try:
-            # Get current time minus one minute
-            start_time = (datetime.datetime.utcnow() - datetime.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            response = requests.get(
-                f"{sp_url}/search?offset=0&content_type=ocr&start_time={start_time}", timeout=(15, 30)
-            )
-            response.raise_for_status()
-            print("screenpipe data fetched")
-            return response.json()
-        except requests.exceptions.Timeout:
-            print("Request timed out. Retrying...")
-            continue
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching screenpipe activity: {e}")
-            return None
-    # ocr_content_str: str = recent_ocr["data"][0]["content"]["text"]
 
-    # print(ocr_content_str)
+def capture_and_read_text():
+    screenshot = ImageGrab.grab()
+    annotations = ocrmac.OCR(screenshot).recognize()
+    result = " ".join([a[0] for a in annotations])
 
-    # if query bounces, assume user isn't on computer
-
-    # run OCR through
-
+    return result
 
 def main():
     """Run query on an interval"""
 
     interval = 90  # seconds
 
+    time.sleep(5)
+
     while True:
-        res = get_screenpipe_activity()
+        ocr_text = capture_and_read_text()
+        res = {
+            "source": "desktop",
+            "content": ocr_text
+        }
         # send OCR info to server
         print(f"posting request with OCR data: {res}")
         try:
@@ -55,8 +44,6 @@ def main():
 
         print(f"snoozing for {interval} seconds")
         time.sleep(interval)
-
-    return None
 
 
 main()

@@ -4,8 +4,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from apscheduler.schedulers.background import BackgroundScheduler
 from pydantic import BaseModel
-import weave
 from src.state import get_convo_history_as_vapi
+import weave
+
+weave.init("shoulder-angel")
 
 load_dotenv()
 
@@ -16,20 +18,19 @@ from src.state import load_convo, get_convo_history_as_groq
 from src.memory import router as mem_router, get_goals_str
 
 
-weave.init("shoulder-angel")
 
 scheduler = GeminiScheduler(
-    model="gemini-1.5-pro-002",
+    model="gemini-1.0-pro",
     system_message="Your role is to check whether the user is working when they should be. Compare their stated schedule with the current time.",
 )
 
 on_task_analyzer = GeminiOnTaskAnalyzer(
-    model="gemini-1.5-pro-002",
+    model="gemini-1.0-pro",
     system_message="Your role is to analyze the user's OCR output and determine if it's relevant to their stated goals (infer this from recent conversation). Return the single word 'True' if it is otherwise return 'False', with nothing else. Use recent messages to understand a user's goals, but only use the OCR for current activity.",
 )
 
 activity_checkin_msg_generator = GeminiTaskReminderFirstMsg(
-    model="gemini-1.5-pro-002",
+    model="gemini-1.0-pro",
     system_message="You're having a voice conversation with Sam. Their recent activity seems unaligned with their goals. You should ask about their current activities, and how it relates to their goals. Keep it within two sentences. Reply directly to Sam.",
 )
 
@@ -46,7 +47,7 @@ def check_schedule():
 
     # fetch setting for work schedule (string initially)
     # gonna do a string literal for testing purposes
-    user_sched_str = "I want to work literally all the time"
+    user_sched_str = "Not working today!"
 
     # get current timestamp & format as something LLM readable
     # e.g. "Monday August 3rd at 5pm"
@@ -99,8 +100,8 @@ def read_root():
 
 
 class ActivityData(BaseModel):
-    data: list | None = None
-    phone_data: str | None = None
+    source: str
+    content: str | None = None
 
 
 @app.post("/handle_activity")
@@ -113,13 +114,16 @@ def handle_activity(activity: ActivityData):
 
     print("attempting to get OCR")
     ocr_str = ""
-    if activity.data:
-        ocr_str = " ".join([item["content"]["text"] for item in activity.data if "content" in item and "text" in item["content"]])
-    elif activity.phone_data:
-        ocr_str = activity.phone_data
+    if activity.content:
+        ocr_str = activity.content
+    # elif activity.phone_data:
+    #     ocr_str = activity.phone_data
 
     if not ocr_str:
-        return None
+        print("no OCR data found")
+        # return None
+    
+
 
     print("attempting to get goals")
     user_goal_m = get_goals_str()
@@ -127,24 +131,20 @@ def handle_activity(activity: ActivityData):
     groq_convo_history = get_convo_history_as_groq()
 
     print("attempting to predict on task")
-    is_on_task_gen = (
+    is_on_task = (
         "True" in on_task_analyzer.predict(
             user_goal_m, ocr_str, recent_messages=groq_convo_history[-20:]
         )
     )
-    print(f"Is on task: {is_on_task_gen}")
 
-    is_on_task = False
-
-    print(f"User is on task: {is_on_task}")
 
     # Draft first message with LLM
 
     if not is_on_task:
-        first_msg_gen = activity_checkin_msg_generator.predict(
-            user_goal_m, ocr_str, recent_messages=groq_convo_history[-25:]
+        first_msg = activity_checkin_msg_generator.predict(
+            user_goal_m, ocr_str, recent_messages=[] # groq_convo_history[-25:]
         )
-        first_msg = f"Hey Sam, checking in. I notice you've been scrolling Reddit's r/memes subreddit. Can you tell me how this is related to your Shoulder Angel project?"
+        # first_msg = f"Hey Sam, checking in. I notice you've been scrolling Reddit's r/memes subreddit. Can you tell me how this is related to your Shoulder Angel project?"
         conversation_history = get_convo_history_as_vapi()[-45:]
 
         call_user(user_goal_m=user_goal_m, first_msg=first_msg, recent_ocr=ocr_str, conversation_history=conversation_history)
